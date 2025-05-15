@@ -1,234 +1,124 @@
-# TemporalDB
+TemporalDB
+
+A lightweight, versioned JSON database with branching, merging, and time-travel capabilities.
 
-## What is it?
+Installation
 
-TemporalDB lets you add **versioning, branching, and time travel** to your application data—similar to Git but for JavaScript objects.
+npm install temporal-db  
 
-## Installation
+Basic Usage
 
-```bash
-npm install temporal-db
-```
+// Initialize  
+const db = new TemporalDB();  
+await db.init();  
 
----
+// Save data  
+await db.commit('main', {  
+  users: [{ id: 1, name: 'Alice' }],  
+  settings: { theme: 'light' }  
+}, 'Initial commit');  
 
-## Browser vs Node.js Usage
+// Get data  
+const data = await db.getData();  
+console.log(data);  
 
-### Browser Environment (Primary Use Case)
+Real-world Example: Document Editor
 
-TemporalDB is primarily designed for browser applications where it uses the native **IndexedDB** as its storage engine. In browsers, data is persistent between sessions, allowing your application to maintain its data history even after refresh or restart.
+// Initialize editor database  
+const db = new TemporalDB();  
+await db.init();  
 
-#### Example Usage:
+// Save initial document  
+await db.commit('main', {  
+  title: 'My Document',  
+  content: 'Hello world',  
+  lastEdited: new Date().toISOString()  
+}, 'First draft');  
 
-```javascript
-import { TemporalDB } from 'temporal-db';
+// Make edits  
+async function saveChanges(newContent) {  
+  const doc = await db.getData();  
+  doc.content = newContent;  
+  doc.lastEdited = new Date().toISOString();  
+  await db.commit('main', doc, 'Updated content');  
+}  
 
-// Create and initialize
-const db = new TemporalDB();
-await db.init();
+// View revision history  
+function getHistory() {  
+  return db.getHistory('main');  
+}  
 
-// Save some data
-await db.commit('main', {
-  users: [{ id: 1, name: 'Alice' }],
-  settings: { theme: 'light' }
-}, 'Initial commit');
+// Restore old version  
+async function restoreVersion(timestamp) {  
+  const oldDoc = await db.getDataAt('main', timestamp);  
+  await db.commit('main', oldDoc, 'Restored old version');  
+  return oldDoc;  
+}  
 
-// Data is stored in IndexedDB and persists between page refreshes
-```
+// Create experimental branch  
+async function createExperiment() {  
+  await db.branch('experiment', 'main');  
+  await db.checkout('experiment');  
+  
+  // Try new formatting  
+  const doc = await db.getData();  
+  doc.content = doc.content.toUpperCase();  
+  await db.commit('experiment', doc, 'ALL CAPS experiment');  
+}  
 
-#### **Browser Benefits:**
-- **Data Persistence:** All history and branches are saved to the browser's IndexedDB.
-- **Performance:** Leverages browser's native storage capabilities.
-- **Offline Support:** Works without an internet connection.
-- **No Backend Required:** All versioning happens client-side.
+// If experiment works, bring changes back to main  
+async function applyExperiment() {  
+  await db.checkout('main');  
+  await db.merge('experiment', 'main');  
+}  
 
----
+Key Features
 
-### Node.js Environment (Testing & Server-Side)
+Branching
 
-In Node.js, TemporalDB requires a polyfill since IndexedDB is a browser API. This is primarily useful for **testing** or for **server-side rendering** scenarios.
+// Create a branch for experiments  
+await db.branch('experimental', 'main');  
+await db.checkout('experimental');  
 
-#### Example Usage:
+// Make changes on this branch only  
+const data = await db.getData();  
+data.settings.theme = 'dark';  
+await db.commit('experimental', data, 'Try dark theme');  
 
-```javascript
-// First set up the IndexedDB polyfill
-require('fake-indexeddb/auto');
+Merging
 
-// Then use TemporalDB as normal
-const { TemporalDB } = require('temporal-db');
+// Go back to main branch  
+await db.checkout('main');  
 
-const db = new TemporalDB();
-await db.init();
+// Bring in changes from experimental branch  
+await db.merge('experimental', 'main');  
 
-// Now you can use all the same methods as in the browser
-await db.commit('main', { key: 'value' }, 'Initial commit');
-```
+Time Travel
 
-💡 **Don't forget to install the polyfill:**
-```bash
-npm install fake-indexeddb
-```
+// Get data from a specific time  
+const oldData = await db.getDataAt('main', '2023-04-01T12:00:00Z');  
 
-#### **Node.js Limitations:**
-- **In-Memory Storage:** Data is stored in memory and doesn’t persist between application restarts.
-- **Testing Only:** Primarily useful for testing or server-side rendering.
-- **No Persistence:** You'll need to implement your own persistence mechanism if needed.
+// See all your changes  
+const history = await db.getHistory('main');  
 
----
+Core API
 
-## Basic Usage
+db.init() – Start the database
 
-```javascript
-// Create and initialize
-const db = new TemporalDB();
-await db.init();
+db.commit(branch, data, message) – Save data with a commit message
 
-// Save some data
-await db.commit('main', {
-  users: [{ id: 1, name: 'Alice' }],
-  settings: { theme: 'light' }
-}, 'Initial commit');
+db.getData() – Get current data state
 
-// Get your data
-const data = await db.getData();
-console.log(data);
-```
+db.branch(newBranch, source) – Create a new branch from source
 
----
+db.checkout(branch) – Switch to a different branch
 
-## 🔑 Key Features
+db.merge(source, target) – Merge source branch into target
 
-### **Branching**
+db.getDataAt(branch, time) – Retrieve data at a given timestamp
 
-Create branches to experiment with data without affecting your main version.
+db.getHistory(branch) – List commit history for a branch
 
-```javascript
-// Create a branch
-await db.branch('feature', 'main');
+License
 
-// Switch to the branch
-await db.checkout('feature');
-
-// Make changes on this branch
-const data = await db.getData();
-data.settings.theme = 'dark';
-await db.commit('feature', data, 'Changed theme');
-```
-
----
-
-### **Merging**
-
-Combine changes from different branches.
-
-```javascript
-// Switch back to main
-await db.checkout('main');
-
-// Merge the feature branch in
-const mergeResult = await db.merge('feature', 'main');
-
-// Handle conflicts if they exist
-if (mergeResult.hasConflicts) {
-  await mergeResult.resolveWith({
-    'settings.theme': 'dark' // Choose which value to keep
-  }, 'Resolved merge conflicts');
-} else {
-  await mergeResult.apply('Merged feature branch');
-}
-```
-
----
-
-### **Time Travel**
-
-View data from any point in time.
-
-```javascript
-// Get data as it was yesterday
-const yesterday = new Date(Date.now() - 86400000);
-const pastData = await db.getDataAt('main', yesterday);
-
-// Get history of changes
-const history = await db.getHistory('main');
-console.log(history.map(commit => commit.message));
-```
-
----
-
-## Common Tasks
-
-### **Updating Data**
-
-```javascript
-// Get current data
-const data = await db.getData();
-
-// Update it
-data.users.push({ id: 2, name: 'Bob' });
-data.lastUpdated = new Date().toISOString();
-
-// Save it
-await db.commit('main', data, 'Added Bob');
-```
-
----
-
-### **Finding Differences**
-
-```javascript
-// Compare two objects
-const oldObj = { count: 1, active: true };
-const newObj = { count: 2, active: true };
-
-const diff = db.diff(oldObj, newObj);
-console.log(diff);
-// → { added: [], modified: [{ path: 'count', value: 2 }], deleted: [] }
-```
-
----
-
-### **Handling Array Merges**
-
-When arrays are modified in different branches, you might need to manually merge them.
-
-```javascript
-// Get data from both branches
-const featureData = await db.getBranchData('feature');
-const mainData = await db.getBranchData('main');
-
-// Combine arrays
-const allUsers = [
-  ...mainData.users,
-  ...featureData.users.filter(user => !mainData.users.some(u => u.id === user.id))
-];
-
-// Create merged data
-const merged = {
-  ...mainData,
-  users: allUsers,
-  settings: { ...mainData.settings, theme: featureData.settings.theme }
-};
-
-// Save merged result
-await db.commit('main', merged, 'Manual merge');
-```
-
----
-
-## API Summary
-
-### **Core**
-- `db.init()` - Initialize the database
-- `db.commit(branch, data, message)` - Save data
-- `db.getData()` - Get current data
-
-### **Branches**
-- `db.branch(newBranch, sourceBranch)` - Create a branch
-- `db.checkout(branch)` - Switch branches
-- `db.listBranches()` - List all branches
-
-### **History & Time Travel**
-- `db.getDataAt(branch, timestamp)` - Get historical data
-- `db.getHistory(branch)` - Get commit history
-
+MIT
